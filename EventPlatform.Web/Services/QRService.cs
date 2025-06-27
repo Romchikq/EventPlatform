@@ -1,32 +1,29 @@
 ﻿using QRCoder;
-using System.Drawing;
-using System.Drawing.Imaging;
 
-namespace EventPlatform.Services
+public class QRService : IQRService
 {
-    public interface IQRService
+    public string GenerateQRCodeBase64(string data)
     {
-        byte[] GenerateQRCode(string data);
-        string GenerateQRCodeBase64(string data);
+        using var qrGenerator = new QRCodeGenerator();
+        using var qrCodeData = qrGenerator.CreateQrCode(data, QRCodeGenerator.ECCLevel.Q);
+        using var qrCode = new PngByteQRCode(qrCodeData);
+        var qrCodeBytes = qrCode.GetGraphic(20);
+        return Convert.ToBase64String(qrCodeBytes);
+
+
     }
 
-    public class QRService : IQRService
+    public byte[] GenerateQRCode(string data)
     {
-        public byte[] GenerateQRCode(string data)
-        {
-            using var qrGenerator = new QRCodeGenerator();
-            using var qrCodeData = qrGenerator.CreateQrCode(data, QRCodeGenerator.ECCLevel.Q);
-            using var qrCode = new QRCode(qrCodeData);
-            using var qrCodeImage = qrCode.GetGraphic(20);
-            using var stream = new MemoryStream();
-            qrCodeImage.Save(stream, ImageFormat.Png);
-            return stream.ToArray();
-        }
-
-        public string GenerateQRCodeBase64(string data)
-        {
-            var bytes = GenerateQRCode(data);
-            return Convert.ToBase64String(bytes);
-        }
+        using var qrGenerator = new QRCodeGenerator();
+        using var qrCodeData = qrGenerator.CreateQrCode(data, QRCodeGenerator.ECCLevel.Q);
+        using var qrCode = new PngByteQRCode(qrCodeData);
+        return qrCode.GetGraphic(20);
     }
 }
+public interface IQRService 
+    {
+        string GenerateQRCodeBase64(string data);
+        byte[] GenerateQRCode(string data);
+    }
+

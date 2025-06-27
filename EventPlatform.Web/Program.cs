@@ -1,33 +1,45 @@
 using EventPlatform.Data;
 using EventPlatform.Services;
+using EventPlatform.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System;
 using System.Text;
+using EventPlatform.Web.Services;
+using EventPlatform.Web.Models;
+using System.Reflection;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
-
-builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
+// Добавление сервисов Swagger
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Event Platform API", Version = "v1" });
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Event Platform API",
+        Version = "v1",
+        Description = "API для платформы мероприятий",
+        Contact = new OpenApiContact
+        {
+            Name = "Поддержка",
+            Email = "support@eventplatform.com"
+        }
+    });
 
+    // Настройка JWT авторизации в Swagger
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Description = "JWT Authorization header using the Bearer scheme",
+        Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
         Name = "Authorization",
         In = ParameterLocation.Header,
         Type = SecuritySchemeType.ApiKey,
         Scheme = "Bearer"
     });
 
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement()
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
             new OpenApiSecurityScheme
@@ -36,56 +48,58 @@ builder.Services.AddSwaggerGen(c =>
                 {
                     Type = ReferenceType.SecurityScheme,
                     Id = "Bearer"
-                },
-                Scheme = "oauth2",
-                Name = "Bearer",
-                In = ParameterLocation.Header,
+                }
             },
-            new List<string>()
+            Array.Empty<string>()
         }
     });
+
+    // Установите путь к XML-комментариям (если нужно)
+    var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    c.IncludeXmlComments(xmlPath);
 });
-
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = builder.Configuration["Jwt:Issuer"],
-            ValidAudience = builder.Configuration["Jwt:Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
-        };
-    });
-
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IEventService, EventService>();
-builder.Services.AddScoped<ITicketService, TicketService>();
-builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddScoped<IModerationService, ModerationService>();
-builder.Services.AddScoped<IPaymentService, PaymentService>();
-builder.Services.AddScoped<IMapService, MapService>();
 
 var app = builder.Build();
 
+// Настройка middleware Swagger
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Event Platform API v1");
+
+        // Для авторизации через Swagger UI
+        c.OAuthClientId("swagger-ui");
+        c.OAuthAppName("Swagger UI");
+    });
 }
 
-app.UseHttpsRedirection();
-app.UseAuthentication();
-app.UseAuthorization();
-app.MapControllers();
-
-using (var scope = app.Services.CreateScope())
+builder.Services.AddSwaggerGen(c =>
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    dbContext.Database.Migrate();
-}
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "API", Version = "v1" });
+
+    // Получаем путь к XML-файлу документации
+    var basePath = AppContext.BaseDirectory;
+    var assemblyName = Assembly.GetExecutingAssembly().GetName().Name;
+    var xmlPath = Path.Combine(basePath, $"{assemblyName}.xml");
+
+    // Проверяем существование файла перед добавлением
+    if (File.Exists(xmlPath))
+    {
+        c.IncludeXmlComments(xmlPath);
+    }
+    else
+    {
+        // Логирование для отладки
+        var allFiles = Directory.GetFiles(basePath);
+        Console.WriteLine($"Available files in {basePath}:");
+        foreach (var file in allFiles)
+        {
+            Console.WriteLine(Path.GetFileName(file));
+        }
+    }
+});
 
 app.Run();

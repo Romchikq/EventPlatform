@@ -2,6 +2,6 @@
 {
     public class TicketPurchaseDto
     {
-        public object EventId { get; internal set; }
+        public int EventId { get; internal set; }
     }
 }

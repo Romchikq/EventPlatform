@@ -1,17 +1,12 @@
 ﻿using EventPlatform.Data;
 using EventPlatform.Models;
+using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using System.Net.Http.Headers;
 using System.Text;
 
-namespace EventPlatform.Services
+namespace EventPlatform.Web.Models
 {
-    public interface IPaymentService
-    {
-        Task<string> CreatePayment(int ticketId, decimal amount, string description, string returnUrl);
-        Task<bool> ProcessPaymentNotification(string notification);
-    }
-
     public class PaymentService : IPaymentService
     {
         private readonly AppDbContext _context;
@@ -49,7 +44,7 @@ namespace EventPlatform.Services
                     type = "redirect",
                     return_url = returnUrl
                 },
-                description = description,
+                description,
                 metadata = new
                 {
                     ticketId
@@ -67,34 +62,92 @@ namespace EventPlatform.Services
             var responseContent = await response.Content.ReadAsStringAsync();
             dynamic responseData = JsonConvert.DeserializeObject(responseContent);
 
-            ticket.PaymentId = responseData.id;
+            ticket.PaymentId = responseData.id.ToString();
             await _context.SaveChangesAsync();
 
-            return responseData.confirmation.confirmation_url;
+            return responseData.confirmation.confirmation_url.ToString();
+        }
+
+        public class YooKassaNotification
+        {
+            [JsonProperty("event")]
+            public string Event { get; set; }
+
+            [JsonProperty("object")]
+            public PaymentObject Object { get; set; }
+        }
+
+        public class PaymentObject
+        {
+            [JsonProperty("id")]
+            public string Id { get; set; }
         }
 
         public async Task<bool> ProcessPaymentNotification(string notification)
         {
-            dynamic notificationData = JsonConvert.DeserializeObject(notification);
-            string eventType = notificationData.@event;
-            string paymentId = notificationData.object.id;
+            try
+            {
+                var data = JsonConvert.DeserializeObject<YooKassaNotification>(notification);
 
-            if (eventType != "payment.succeeded")
+                if (data?.Event != "payment.succeeded" || data.Object?.Id == null)
+                    return false;
+
+                var ticket = await _context.Tickets
+                    .FirstOrDefaultAsync(t => t.PaymentId == data.Object.Id);
+
+                if (ticket == null)
+                    return false;
+
+                ticket.Status = TicketStatus.Active;
+                await _context.SaveChangesAsync();
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error processing notification: {ex.Message}");
+                return false;
+            }
+        }
+
+        public async Task<bool> ProcessRefund(string paymentId)
+        {
+            var ticket = await _context.Tickets
+                .FirstOrDefaultAsync(t => t.PaymentId == paymentId);
+
+            if (ticket == null || ticket.Status != TicketStatus.Active)
             {
                 return false;
             }
 
-            var ticket = await _context.Tickets.FirstOrDefaultAsync(t => t.PaymentId == paymentId);
-            if (ticket == null)
+            var refundData = new
+            {
+                payment_id = paymentId,
+                amount = new
+                {
+                    value = ticket.PricePaid.ToString("0.00"),
+                    currency = "RUB"
+                }
+            };
+
+            var content = new StringContent(JsonConvert.SerializeObject(refundData), Encoding.UTF8, "application/json");
+            var response = await _httpClient.PostAsync("refunds", content);
+
+            if (!response.IsSuccessStatusCode)
             {
                 return false;
             }
 
-            ticket.Status = TicketStatus.Active;
+            ticket.Status = TicketStatus.Refunded;
+            ticket.RefundDate = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
-
             return true;
+        }
+
+        public Task<bool> ProcessRefundAsync(string paymentId)
+        {
+            throw new NotImplementedException();
         }
     }
 }

@@ -3,6 +3,7 @@ using EventPlatform.Models;
 using EventPlatform.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using QRCoder;
 
 namespace EventPlatform.Controllers
 {
@@ -58,20 +59,34 @@ namespace EventPlatform.Controllers
                 }
             });
         }
-
         [Authorize(Roles = "Organizer")]
         [HttpPost("validate")]
         public async Task<IActionResult> ValidateTicket([FromBody] ValidateTicketDto validateDto)
         {
-            var organizerId = int.Parse(User.FindFirst("sub").Value);
-            var result = await _ticketService.ValidateTicket(validateDto.QrData, organizerId);
-
-            if (result == null)
+            if (validateDto?.QrData == null)
             {
-                return BadRequest(new { message = "Invalid ticket" });
+                return BadRequest(new { message = "QR data is required" });
             }
 
-            return Ok(result);
+            var organizerId = int.Parse(User.FindFirst("sub").Value);
+            var result = await _ticketService.ValidateTicket((string)validateDto.QrData, organizerId);
+
+            if (!result.IsValid)
+            {
+                return BadRequest(new { message = result.Message });
+            }
+
+            return Ok(new
+            {
+                isValid = result.IsValid,
+                message = result.Message,
+                ticket = new
+                {
+                    result.Ticket.Id,
+                    EventName = result.Ticket.Event?.Title,
+                    UserName = $"{result.Ticket.User?.FirstName} {result.Ticket.User?.LastName}"
+                }
+            });
         }
 
         [HttpPost("{id}/refund")]

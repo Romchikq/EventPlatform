@@ -47,5 +47,9 @@ namespace EventPlatform.Models
 
         [ForeignKey("UserId")]
         public User User { get; set; }
+
+
     }
+
+
 }
